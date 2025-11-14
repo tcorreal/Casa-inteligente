@@ -1,25 +1,78 @@
-# Simple starter app for Casa-inteligente
-# This is a placeholder Flask app that demonstrates where the model would be loaded
-# and how gestures could be exposed via a small HTTP API. Replace with your real
-# inference code and the trained model (tm_model/gestos.h5).
+# app.py
+# Aplicación Streamlit para "Casa inteligente multimodal"
+# - Interfaz gráfica
+# - Control por texto
+# - Control por gestos usando modelo de Teachable Machine
 
-from flask import Flask, jsonify, request
-import os
+import streamlit as st
+from typing import Optional
+import re
+import numpy as np
+from PIL import Image, ImageOps
 
-app = Flask(__name__)
-MODEL_PATH = os.path.join(os.path.dirname(__file__), 'tm_model', 'gestos.h5')
-LABELS_PATH = os.path.join(os.path.dirname(__file__), 'tm_model', 'labels.txt')
+# Import de TensorFlow se hace cuando se carga el modelo TM para no romper la app si falta
+# El decorador @st.cache_resource cachingará el objeto del modelo entre reruns.
+# (Streamlit >= 1.18)
+try:
+    import tensorflow as tf
+    TF_AVAILABLE = True
+except Exception:
+    TF_AVAILABLE = False
 
-@app.route('/')
-def index():
-    return jsonify({'message': 'Casa-inteligente placeholder app', 'model_exists': os.path.exists(MODEL_PATH)})
+st.set_page_config(page_title="Casa inteligente multimodal", layout="wide")
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    # Placeholder prediction endpoint. Expects an image (multipart/form-data) or
-    # base64 payload in JSON. Currently returns a fixed response.
-    data = request.json or {}
-    return jsonify({'gesture': 'placeholder', 'confidence': 0.0, 'received': bool(data)})
+# -----------------------
+# Inicializar session_state
+# -----------------------
+def init_state():
+    if "sala" not in st.session_state:
+        st.session_state["sala"] = {
+            "luz": False,        # True = encendida
+            "brillo": 50,        # 0-100
+            "ventilador": 0,     # 0-3
+            "puerta": False,     # False = cerrada, True = abierta
+            "presencia": False,  # Sensor simulado
+        }
+    if "habitacion" not in st.session_state:
+        st.session_state["habitacion"] = {
+            "luz": False,
+            "brillo": 50,
+            "ventilador": 0,
+            "puerta": False,
+            "presencia": False,
+        }
+    if "pagina" not in st.session_state:
+        st.session_state["pagina"] = "Panel general"
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+init_state()
+
+# -----------------------
+# Función para cargar modelo TM (gestos)
+# -----------------------
+@st.cache_resource
+def load_tm_model():
+    """
+    Carga el modelo de Teachable Machine desde tm_model/gestos.h5.
+    Devuelve el modelo o None si no pudo cargarse.
+    """
+    if not TF_AVAILABLE:
+        # No queremos fallar si tensorflow no está importable
+        return None
+    try:
+        model = tf.keras.models.load_model("tm_model/gestos.h5", compile=False)
+        return model
+    except Exception as e:
+        # Registramos en sesión para poder mostrar el error sin romper la app
+        st.session_state["_tm_load_error"] = str(e)
+        return None
+
+# Lista fija de clases esperadas por el modelo
+TM_CLASSES = ["luz_on", "luz_off", "ventilador_on", "ventilador_off"]
+
+# -----------------------
+# Utilidades
+# -----------------------
+def seleccionar_ambiente_mejor(comando: str) -> Optional[str]:
+    """Detecta si el comando menciona 'sala' o 'habitacion'. Devuelve 'sala'|'habitacion'|None"""
+    texto = comando.lower()
+    if "sala" in texto o...
